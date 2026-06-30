@@ -1,10 +1,10 @@
 from __future__ import annotations
-import asyncio
 import os
 from dotenv import load_dotenv
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
-from mcp.types import Tool, TextContent
+from mcp.server.stdio import stdio_server
+from mcp.types import ServerCapabilities, Tool, TextContent
 from .client import ScreenerClient
 
 load_dotenv()
@@ -173,17 +173,17 @@ async def read_resource(uri: str) -> list[TextContent]:
 
 
 async def main():
-    async with server.run(
-        initialization_options=InitializationOptions(
-            server_name="screener-mcp",
-            server_version="0.1.0",
-        ),
-    ) as session:
-        await session.consume_notification_stream()
-
+    options = InitializationOptions(
+        server_name="screener-mcp",
+        server_version="0.1.0",
+        capabilities=ServerCapabilities(),
+    )
+    async with stdio_server() as streams:
+        await server.run(streams[0], streams[1], options)
 
 
 def run():
+    import asyncio
     asyncio.run(main())
 
 
