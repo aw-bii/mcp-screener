@@ -172,18 +172,24 @@ class ScreenerClient:
                 rows = []
                 for tr in tbody.find_all("tr"):
                     cells = [td.get_text(strip=True) for td in tr.find_all("td")]
-                    if cells and len(cells) == len(headers):
+                    if cells:
                         rows.append(dict(zip(headers, cells)))
-                return rows
-        data = []
-        for a in peer_section.find_all("a", href=lambda h: h and "/market/" in h):
-            title = a.get("title", "").lower().replace(" ", "_")
-            if title:
-                data.append({"symbol": a.get_text(strip=True), "title": title})
-        return data
+                if rows:
+                    return rows
+        # Fallback: extract company links from the peers section
+        companies = []
+        for a in peer_section.find_all("a", href=lambda h: h and "/company/" in h):
+            name = a.get_text(strip=True)
+            slug = a["href"].strip("/").split("/")[-1]
+            if name and slug:
+                companies.append({"name": name, "symbol": slug})
+        return companies
 
     def run_screen(self, query: str, columns: list[str] | None = None) -> list[dict]:
-        html = self._get_screen(query)
+        effective_query = query
+        if columns and "select" not in query.lower():
+            effective_query = f"{query} select {', '.join(columns)}"
+        html = self._get_screen(effective_query)
         soup = BeautifulSoup(html, "lxml")
         table = soup.find("table", class_="data-table")
         if not table:
@@ -201,17 +207,9 @@ class ScreenerClient:
             cells = [td.get_text(strip=True) for td in tr.find_all("td")]
             if not cells:
                 continue
-            if columns:
-                row = {}
-                for i, h in enumerate(headers):
-                    if h in columns and i < len(cells):
-                        row[h] = cells[i]
-                if row:
-                    data_rows.append(row)
-            else:
-                row = {}
-                for i, h in enumerate(headers):
-                    if i < len(cells):
-                        row[h] = cells[i]
-                data_rows.append(row)
+            row = {}
+            for i, h in enumerate(headers):
+                if i < len(cells):
+                    row[h] = cells[i]
+            data_rows.append(row)
         return data_rows
