@@ -15,7 +15,9 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "lxml>=5.1.0",
     "python-dotenv>=1.0.0",
+    "cryptography>=35.0.0",
+    "browser-cookie3>=0.20.0",
 ]
 
 [project.scripts]
-screener-mcp = "screener_mcp.server:run"
+screener-mcp = "screener_mcp.__main__:main"
