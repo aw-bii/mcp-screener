@@ -16,7 +16,7 @@ dependencies = [
     "lxml>=5.1.0",
     "python-dotenv>=1.0.0",
     "cryptography>=35.0.0",
-    "browser-cookie3>=0.20.0",
+
 ]
 
 [project.scripts]

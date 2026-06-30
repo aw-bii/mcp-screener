@@ -24,8 +24,9 @@ pip install git+https://github.com/aw-bii/mcp-screener.git
 
 ## Configuration
 
-1. Get your `sessionid` cookie from [screener.in](https://www.screener.in/) (browser dev tools → Cookies)
-2. Add to your MCP client config:
+1. Log into [screener.in](https://www.screener.in/) in your browser
+2. Open DevTools (F12) → Application → Cookies → `screener.in` → copy the `sessionid` value
+3. Add to your MCP client config:
 
 ```json
 {
