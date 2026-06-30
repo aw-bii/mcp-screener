@@ -1,10 +1,14 @@
 from __future__ import annotations
+import json
 import os
+from collections.abc import Iterable
 from dotenv import load_dotenv
 from mcp.server import Server
+from mcp.server.lowlevel.server import ReadResourceContents
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
-from mcp.types import ServerCapabilities, Tool, TextContent
+from mcp.types import Resource, ResourceTemplate, ServerCapabilities, Tool, TextContent
+from pydantic import AnyUrl
 from .client import ScreenerClient
 
 load_dotenv()
@@ -19,7 +23,7 @@ def _err(msg: str) -> list[TextContent]:
 
 
 def _ok(data) -> list[TextContent]:
-    return [TextContent(type="text", text=str(data))]
+    return [TextContent(type="text", text=json.dumps(data, indent=2, default=str))]
 
 
 @server.list_tools()
@@ -43,7 +47,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_company_info",
-            description="Get basic company profile: name, sector, market cap, CMP, 52-week high/low",
+            description="Get basic company profile: name, website, sector/industry, BSE/NSE codes, market cap, current price, 52-week high/low, P/E, book value, dividend yield",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -148,19 +152,36 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 
 @server.list_resources()
-async def list_resources() -> list[dict]:
+async def list_resources() -> list[Resource]:
     return [
-        {"uri": "screener://sectors", "name": "Available Sectors"},
-        {"uri": "screener://company/{symbol}", "name": "Company Snapshot (replace {symbol} with company symbol)"},
+        Resource(uri=AnyUrl("screener://sectors"), name="Available Sectors", description="List of all market sectors on Screener.in"),
+    ]
+
+
+@server.list_resource_templates()
+async def list_resource_templates() -> list[ResourceTemplate]:
+    return [
+        ResourceTemplate(
+            name="Company Snapshot",
+            uriTemplate="screener://company/{symbol}",
+            description="Combined snapshot: info, multiples, ratios, quarterly, shareholding for a company. Replace {symbol} with company symbol (e.g. INFY, RELIANCE).",
+            mimeType="application/json",
+        ),
     ]
 
 
 @server.read_resource()
-async def read_resource(uri: str) -> list[TextContent]:
-    if uri == "screener://sectors":
-        return _ok("Set SCREENER_SESSION_ID in .env to access sector list. Available via get_company_info for individual companies.")
-    if uri.startswith("screener://company/"):
-        symbol = uri.split("/")[-1]
+async def read_resource(uri: AnyUrl) -> Iterable[ReadResourceContents]:
+    uri_str = str(uri)
+    if uri_str == "screener://sectors":
+        sectors = client.get_sectors()
+        content = json.dumps(sectors, indent=2) if sectors else "No sectors found. Set SCREENER_SESSION_ID in .env for full access."
+        return [ReadResourceContents(
+            content=content,
+            mime_type="application/json" if sectors else "text/plain",
+        )]
+    if uri_str.startswith("screener://company/"):
+        symbol = uri_str.split("/")[-1]
         data = {
             "info": client.get_company_info(symbol),
             "multiples": client.get_trading_multiples(symbol),
@@ -168,8 +189,14 @@ async def read_resource(uri: str) -> list[TextContent]:
             "quarterly": client.get_quarterly_results(symbol),
             "shareholding": client.get_shareholding(symbol),
         }
-        return _ok(data)
-    return _err(f"Unknown resource: {uri}")
+        return [ReadResourceContents(
+            content=json.dumps(data, indent=2, default=str),
+            mime_type="application/json",
+        )]
+    return [ReadResourceContents(
+        content=f"Error: Unknown resource: {uri}",
+        mime_type="text/plain",
+    )]
 
 
 async def main():

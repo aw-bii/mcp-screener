@@ -36,6 +36,7 @@ class ScreenerClient:
                 return resp.text
             except httpx.HTTPStatusError:
                 raise
+        raise RuntimeError(f"Rate limited after 3 retries: {url}")
 
     def _soup(self, url: str) -> BeautifulSoup:
         return BeautifulSoup(self._fetch(url), "lxml")
@@ -46,7 +47,6 @@ class ScreenerClient:
 
     def _get_screen(self, query: str) -> str:
         self._ensure_csrf()
-        self._rate_limit()
         for attempt in range(3):
             try:
                 resp = self.client.get(
@@ -61,6 +61,7 @@ class ScreenerClient:
                 return resp.text
             except httpx.HTTPStatusError:
                 raise
+        raise RuntimeError(f"Rate limited after 3 retries for query: {query}")
 
     def _parse_table(self, soup: BeautifulSoup, section_id: str) -> list[dict]:
         section = soup.find("section", id=section_id)
@@ -98,6 +99,19 @@ class ScreenerClient:
                     info["bse_code"] = text.replace("BSE:", "").strip()
                 elif text.startswith("NSE:"):
                     info["nse_symbol"] = text.replace("NSE:", "").strip()
+        for li in soup.select("#top-ratios li"):
+            name_el = li.find("span", class_="name")
+            val_el = li.find("span", class_="number")
+            if name_el and val_el:
+                key = name_el.get_text(strip=True).lower().replace("/", "_").replace(" ", "_")
+                info[key] = val_el.get_text(strip=True)
+        peer_section = soup.find("section", id="peers")
+        if peer_section:
+            for a in peer_section.find_all("a", href=lambda h: h and "/market/" in h):
+                title = a.get("title", "")
+                if title:
+                    key = title.lower().replace(" ", "_")
+                    info.setdefault(key, a.get_text(strip=True))
         return info
 
     def get_trading_multiples(self, symbol: str) -> dict:
@@ -136,16 +150,36 @@ class ScreenerClient:
         soup = self._soup(f"{self.BASE_URL}/company/{symbol}/")
         return self._parse_table(soup, "quarters")
 
-    def get_peers(self, symbol: str) -> dict:
+    def get_sectors(self) -> list[str]:
+        soup = self._soup(f"{self.BASE_URL}/screens/")
+        return list(dict.fromkeys(
+            a.get_text(strip=True)
+            for a in soup.select("a[href*='/sector/']")
+            if a.get_text(strip=True)
+        ))
+
+    def get_peers(self, symbol: str) -> list[dict]:
         soup = self._soup(f"{self.BASE_URL}/company/{symbol}/")
         peer_section = soup.find("section", id="peers")
         if not peer_section:
-            return {}
-        data = {}
+            return []
+        table = peer_section.find("table")
+        if table:
+            thead = table.find("thead")
+            tbody = table.find("tbody")
+            if thead and tbody:
+                headers = [th.get_text(strip=True) for th in thead.find_all("th")]
+                rows = []
+                for tr in tbody.find_all("tr"):
+                    cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+                    if cells and len(cells) == len(headers):
+                        rows.append(dict(zip(headers, cells)))
+                return rows
+        data = []
         for a in peer_section.find_all("a", href=lambda h: h and "/market/" in h):
             title = a.get("title", "").lower().replace(" ", "_")
             if title:
-                data[title] = a.get_text(strip=True)
+                data.append({"symbol": a.get_text(strip=True), "title": title})
         return data
 
     def run_screen(self, query: str, columns: list[str] | None = None) -> list[dict]:
