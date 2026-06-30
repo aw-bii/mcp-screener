@@ -40,11 +40,19 @@ class ScreenerClient:
     def _soup(self, url: str) -> BeautifulSoup:
         return BeautifulSoup(self._fetch(url), "lxml")
 
-    def _post_screen(self, url: str, query: str) -> str:
+    def _ensure_csrf(self):
+        if not self.client.cookies.get("csrftoken"):
+            self._fetch("https://www.screener.in/")
+
+    def _get_screen(self, query: str) -> str:
+        self._ensure_csrf()
         self._rate_limit()
         for attempt in range(3):
             try:
-                resp = self.client.post(url, data={"query": query})
+                resp = self.client.get(
+                    f"{self.BASE_URL}/screen/raw/",
+                    params={"query": query},
+                )
                 if resp.status_code == 429:
                     time.sleep(2 ** attempt)
                     continue
@@ -141,28 +149,35 @@ class ScreenerClient:
         return data
 
     def run_screen(self, query: str, columns: list[str] | None = None) -> list[dict]:
-        html = self._post_screen(f"{self.BASE_URL}/screen/new/", query)
+        html = self._get_screen(query)
         soup = BeautifulSoup(html, "lxml")
-        table = soup.find("table")
+        table = soup.find("table", class_="data-table")
         if not table:
             return []
-        thead = table.find("thead")
-        tbody = table.find("tbody")
-        if not thead or not tbody:
+        rows = table.find_all("tr")
+        if not rows:
             return []
-        headers = [th.get_text(strip=True) for th in thead.find_all("th")]
-        if columns:
-            col_indices = [i for i, h in enumerate(headers) if h in columns]
-        else:
-            col_indices = list(range(len(headers)))
-        filtered_headers = [headers[i] for i in col_indices]
-        rows = []
-        for tr in tbody.find_all("tr"):
+        header_row = rows[0]
+        headers = []
+        for th in header_row.find_all("th"):
+            parts = [s for s in th.stripped_strings if s != "Rs."]
+            headers.append(" ".join(parts) if len(parts) > 1 else parts[0] if parts else "")
+        data_rows = []
+        for tr in rows[1:]:
             cells = [td.get_text(strip=True) for td in tr.find_all("td")]
-            if cells:
+            if not cells:
+                continue
+            if columns:
                 row = {}
-                for idx in col_indices:
-                    if idx < len(cells):
-                        row[headers[idx]] = cells[idx]
-                rows.append(row)
-        return rows
+                for i, h in enumerate(headers):
+                    if h in columns and i < len(cells):
+                        row[h] = cells[i]
+                if row:
+                    data_rows.append(row)
+            else:
+                row = {}
+                for i, h in enumerate(headers):
+                    if i < len(cells):
+                        row[h] = cells[i]
+                data_rows.append(row)
+        return data_rows
