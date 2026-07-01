@@ -30,22 +30,6 @@ def _ok(data) -> list[TextContent]:
 async def list_tools() -> list[Tool]:
     return [
         Tool(
-            name="run_screen",
-            description="Run a Screener.in stock screening query. Example: 'Market capitalization > 500 AND Price to earning < 15'. Default columns returned: S.No., Name, CMP, P/E, Mar Cap Cr., Div Yld %, NP Qtr Cr., Qtr Profit Var %, Sales Qtr Cr., Qtr Sales Var %, ROCE %. Pass columns to filter to a subset using these names (or common aliases like 'Market Cap', 'Price', 'Dividend Yield').",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Screener.in query string"},
-                    "columns": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional column names to include (default: all columns)"
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
             name="get_company_info",
             description="Get basic company profile: name, website, sector/industry, BSE/NSE codes, market cap, current price, 52-week high/low, P/E, book value, dividend yield",
             inputSchema={
@@ -129,8 +113,6 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     try:
         match name:
-            case "run_screen":
-                return _ok(client.run_screen(arguments["query"], arguments.get("columns")))
             case "get_company_info":
                 return _ok(client.get_company_info(arguments["symbol"]))
             case "get_financials":

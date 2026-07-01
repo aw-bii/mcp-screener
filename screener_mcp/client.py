@@ -41,27 +41,6 @@ class ScreenerClient:
     def _soup(self, url: str) -> BeautifulSoup:
         return BeautifulSoup(self._fetch(url), "lxml")
 
-    def _ensure_csrf(self):
-        if not self.client.cookies.get("csrftoken"):
-            self._fetch("https://www.screener.in/")
-
-    def _get_screen(self, query: str) -> str:
-        self._ensure_csrf()
-        for attempt in range(3):
-            try:
-                resp = self.client.get(
-                    f"{self.BASE_URL}/screen/raw/",
-                    params={"query": query},
-                )
-                if resp.status_code == 429:
-                    time.sleep(2 ** attempt)
-                    continue
-                resp.raise_for_status()
-                self._last_request = time.time()
-                return resp.text
-            except httpx.HTTPStatusError:
-                raise
-        raise RuntimeError(f"Rate limited after 3 retries for query: {query}")
 
     def _parse_table(self, soup: BeautifulSoup, section_id: str) -> list[dict]:
         section = soup.find("section", id=section_id)
@@ -195,62 +174,3 @@ class ScreenerClient:
                 rows.append(dict(zip(headers, cells)))
         return rows
 
-    def run_screen(self, query: str, columns: list[str] | None = None) -> list[dict]:
-        html = self._get_screen(query)
-        soup = BeautifulSoup(html, "lxml")
-        table = soup.find("table", class_="data-table")
-        if not table:
-            return []
-        rows = table.find_all("tr")
-        if not rows:
-            return []
-        header_row = rows[0]
-        headers = []
-        for th in header_row.find_all("th"):
-            parts = [s for s in th.stripped_strings if s != "Rs."]
-            headers.append(" ".join(parts) if len(parts) > 1 else parts[0] if parts else "")
-        # Map common user-facing names to Screener.in's abbreviated header tokens
-        _ALIASES = {
-            "market cap": "mar cap", "market capitalization": "mar cap",
-            "price": "cmp", "current price": "cmp",
-            "dividend yield": "div yld", "dividend": "div yld",
-            "quarterly profit": "np qtr", "net profit": "np qtr",
-            "profit growth": "qtr profit var", "profit var": "qtr profit var",
-            "quarterly sales": "sales qtr", "revenue": "sales qtr",
-            "sales growth": "qtr sales var", "sales var": "qtr sales var",
-            "return on capital": "roce", "return on equity": "roce",
-            "pe": "p/e", "p/e ratio": "p/e", "price earnings": "p/e",
-        }
-        def _header_matches(needle: str, header: str) -> bool:
-            h, n = header.lower(), needle.lower()
-            if h == n:
-                return True
-            # "cmp" matches "cmp rs." but NOT "cmp/sales" — check word boundary after needle
-            if h.startswith(n) and (len(h) == len(n) or h[len(n)] in " .,"):
-                return True
-            # "p/e" matches "p/e ratio" — check word boundary after header
-            if n.startswith(h) and (len(n) == len(h) or n[len(h)] in " .,"):
-                return True
-            return False
-
-        keep = None
-        if columns:
-            keep = set()
-            for col in columns:
-                col_l = col.lower().strip()
-                needle = _ALIASES.get(col_l, col_l)
-                for i, h in enumerate(headers):
-                    if _header_matches(needle, h):
-                        keep.add(i)
-        data_rows = []
-        for tr in rows[1:]:
-            cells = [td.get_text(strip=True) for td in tr.find_all("td")]
-            if not cells:
-                continue
-            row = {}
-            for i, h in enumerate(headers):
-                if i < len(cells) and (keep is None or i in keep):
-                    row[h] = cells[i]
-            if row:
-                data_rows.append(row)
-        return data_rows
