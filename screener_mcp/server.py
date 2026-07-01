@@ -31,7 +31,7 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="run_screen",
-            description="Run a Screener.in stock screening query. Example: 'Market capitalization > 500 AND Price to earning < 15'",
+            description="Run a Screener.in stock screening query. Example: 'Market capitalization > 500 AND Price to earning < 15'. Default columns returned: S.No., Name, CMP, P/E, Mar Cap Cr., Div Yld %, NP Qtr Cr., Qtr Profit Var %, Sales Qtr Cr., Qtr Sales Var %, ROCE %. Pass columns to filter to a subset using these names (or common aliases like 'Market Cap', 'Price', 'Dividend Yield').",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -113,7 +113,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_peers",
-            description="Get peer comparison data for a company",
+            description="Get peer comparison table for a company — all companies in the same industry with CMP, P/E, Market Cap, Dividend Yield, quarterly financials and ROCE",
             inputSchema={
                 "type": "object",
                 "properties": {

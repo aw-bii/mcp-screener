@@ -171,23 +171,25 @@ class ScreenerClient:
         peer_section = soup.find("section", id="peers")
         if not peer_section:
             return []
-        table = peer_section.find("table")
+        # Peer table is JS-rendered; use the industry market page instead.
+        # Prefer the most specific classification level available.
+        industry_link = (
+            peer_section.find("a", title="Industry")
+            or peer_section.find("a", title="Broad Industry")
+            or peer_section.find("a", title="Sector")
+        )
+        if not industry_link:
+            return []
+        market_soup = self._soup(self.BASE_URL + industry_link["href"])
+        table = market_soup.find("table")
         if not table:
             return []
-        # Extract headers from <thead> or the first <tr>
-        thead = table.find("thead")
-        if thead:
-            headers = [th.get_text(strip=True) for th in thead.find_all("th")]
-            tbody = table.find("tbody")
-            data_trs = tbody.find_all("tr") if tbody else []
-        else:
-            all_trs = table.find_all("tr")
-            if not all_trs:
-                return []
-            headers = [c.get_text(strip=True) for c in all_trs[0].find_all(["th", "td"])]
-            data_trs = all_trs[1:]
+        trs = table.find_all("tr")
+        if not trs:
+            return []
+        headers = [c.get_text(strip=True) for c in trs[0].find_all(["th", "td"])]
         rows = []
-        for tr in data_trs:
+        for tr in trs[1:]:
             cells = [td.get_text(strip=True) for td in tr.find_all("td")]
             if cells:
                 rows.append(dict(zip(headers, cells)))
@@ -207,15 +209,27 @@ class ScreenerClient:
         for th in header_row.find_all("th"):
             parts = [s for s in th.stripped_strings if s != "Rs."]
             headers.append(" ".join(parts) if len(parts) > 1 else parts[0] if parts else "")
-        # Case-insensitive partial match: "Market Cap" matches "Mar Cap Rs.Cr."
+        # Map common user-facing names to Screener.in's abbreviated header tokens
+        _ALIASES = {
+            "market cap": "mar cap", "market capitalization": "mar cap",
+            "price": "cmp", "current price": "cmp",
+            "dividend yield": "div yld", "dividend": "div yld",
+            "quarterly profit": "np qtr", "net profit": "np qtr",
+            "profit growth": "qtr profit var", "profit var": "qtr profit var",
+            "quarterly sales": "sales qtr", "revenue": "sales qtr",
+            "sales growth": "qtr sales var", "sales var": "qtr sales var",
+            "return on capital": "roce", "return on equity": "roce",
+            "pe": "p/e", "p/e ratio": "p/e", "price earnings": "p/e",
+        }
         keep = None
         if columns:
             keep = set()
             for col in columns:
-                col_l = col.lower()
+                col_l = col.lower().strip()
+                needle = _ALIASES.get(col_l, col_l)
                 for i, h in enumerate(headers):
                     h_l = h.lower()
-                    if col_l == h_l or col_l in h_l or h_l in col_l:
+                    if needle == h_l or needle in h_l or h_l in needle:
                         keep.add(i)
         data_rows = []
         for tr in rows[1:]:
