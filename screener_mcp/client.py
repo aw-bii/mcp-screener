@@ -78,7 +78,7 @@ class ScreenerClient:
         rows = []
         for tr in tbody.find_all("tr"):
             cells = [td.get_text(strip=True) for td in tr.find_all("td")]
-            if cells and len(cells) == len(headers):
+            if cells:
                 rows.append(dict(zip(headers, cells)))
         return rows
 
