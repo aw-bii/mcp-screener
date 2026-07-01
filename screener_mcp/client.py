@@ -221,6 +221,18 @@ class ScreenerClient:
             "return on capital": "roce", "return on equity": "roce",
             "pe": "p/e", "p/e ratio": "p/e", "price earnings": "p/e",
         }
+        def _header_matches(needle: str, header: str) -> bool:
+            h, n = header.lower(), needle.lower()
+            if h == n:
+                return True
+            # "cmp" matches "cmp rs." but NOT "cmp/sales" — check word boundary after needle
+            if h.startswith(n) and (len(h) == len(n) or h[len(n)] in " .,"):
+                return True
+            # "p/e" matches "p/e ratio" — check word boundary after header
+            if n.startswith(h) and (len(n) == len(h) or n[len(h)] in " .,"):
+                return True
+            return False
+
         keep = None
         if columns:
             keep = set()
@@ -228,8 +240,7 @@ class ScreenerClient:
                 col_l = col.lower().strip()
                 needle = _ALIASES.get(col_l, col_l)
                 for i, h in enumerate(headers):
-                    h_l = h.lower()
-                    if needle == h_l or needle in h_l or h_l in needle:
+                    if _header_matches(needle, h):
                         keep.add(i)
         data_rows = []
         for tr in rows[1:]:
