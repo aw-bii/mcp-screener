@@ -80,7 +80,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_trading_multiples",
-            description="Get trading multiples: P/E, P/B, P/S, EV/EBITDA, EV/Sales, market cap, dividend yield",
+            description="Get valuation metrics: Market Cap, Current Price, 52-week High/Low, P/E, Book Value, P/B (calculated), Dividend Yield, ROCE, ROE",
             inputSchema={
                 "type": "object",
                 "properties": {

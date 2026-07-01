@@ -117,17 +117,25 @@ class ScreenerClient:
     def get_trading_multiples(self, symbol: str) -> dict:
         soup = self._soup(f"{self.BASE_URL}/company/{symbol}/")
         multiples = {}
-        ratio_section = soup.find("div", class_="company-ratios")
-        if ratio_section:
-            for li in ratio_section.find_all("li"):
-                name_span = li.find("span", class_="name")
-                if name_span:
-                    key = name_span.get_text(strip=True).lower().replace(" ", "_")
-                    spans = li.find_all("span")
-                    if len(spans) >= 3:
-                        multiples[key] = spans[-1].get_text(strip=True)
-                    elif len(spans) >= 2:
-                        multiples[key] = spans[1].get_text(strip=True)
+        for li in soup.select("#top-ratios li"):
+            name_el = li.find("span", class_="name")
+            if not name_el:
+                continue
+            key = name_el.get_text(strip=True)
+            # Collect all number spans — High/Low has two
+            numbers = [s.get_text(strip=True) for s in li.find_all("span", class_="number")]
+            if len(numbers) >= 2:
+                multiples[key] = " / ".join(numbers)
+            elif numbers:
+                multiples[key] = numbers[0]
+        # Calculate P/B if we have both price and book value
+        try:
+            price = float(multiples.get("Current Price", "0").replace(",", "") or 0)
+            book = float(multiples.get("Book Value", "0").replace(",", "") or 0)
+            if price and book:
+                multiples["P/B"] = f"{price / book:.2f}"
+        except (ValueError, ZeroDivisionError):
+            pass
         return multiples
 
     def get_ratios(self, symbol: str) -> list[dict]:
@@ -164,32 +172,29 @@ class ScreenerClient:
         if not peer_section:
             return []
         table = peer_section.find("table")
-        if table:
-            thead = table.find("thead")
+        if not table:
+            return []
+        # Extract headers from <thead> or the first <tr>
+        thead = table.find("thead")
+        if thead:
+            headers = [th.get_text(strip=True) for th in thead.find_all("th")]
             tbody = table.find("tbody")
-            if thead and tbody:
-                headers = [th.get_text(strip=True) for th in thead.find_all("th")]
-                rows = []
-                for tr in tbody.find_all("tr"):
-                    cells = [td.get_text(strip=True) for td in tr.find_all("td")]
-                    if cells:
-                        rows.append(dict(zip(headers, cells)))
-                if rows:
-                    return rows
-        # Fallback: extract company links from the peers section
-        companies = []
-        for a in peer_section.find_all("a", href=lambda h: h and "/company/" in h):
-            name = a.get_text(strip=True)
-            slug = a["href"].strip("/").split("/")[-1]
-            if name and slug:
-                companies.append({"name": name, "symbol": slug})
-        return companies
+            data_trs = tbody.find_all("tr") if tbody else []
+        else:
+            all_trs = table.find_all("tr")
+            if not all_trs:
+                return []
+            headers = [c.get_text(strip=True) for c in all_trs[0].find_all(["th", "td"])]
+            data_trs = all_trs[1:]
+        rows = []
+        for tr in data_trs:
+            cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+            if cells:
+                rows.append(dict(zip(headers, cells)))
+        return rows
 
     def run_screen(self, query: str, columns: list[str] | None = None) -> list[dict]:
-        effective_query = query
-        if columns and "select" not in query.lower():
-            effective_query = f"{query} select {', '.join(columns)}"
-        html = self._get_screen(effective_query)
+        html = self._get_screen(query)
         soup = BeautifulSoup(html, "lxml")
         table = soup.find("table", class_="data-table")
         if not table:
@@ -202,6 +207,16 @@ class ScreenerClient:
         for th in header_row.find_all("th"):
             parts = [s for s in th.stripped_strings if s != "Rs."]
             headers.append(" ".join(parts) if len(parts) > 1 else parts[0] if parts else "")
+        # Case-insensitive partial match: "Market Cap" matches "Mar Cap Rs.Cr."
+        keep = None
+        if columns:
+            keep = set()
+            for col in columns:
+                col_l = col.lower()
+                for i, h in enumerate(headers):
+                    h_l = h.lower()
+                    if col_l == h_l or col_l in h_l or h_l in col_l:
+                        keep.add(i)
         data_rows = []
         for tr in rows[1:]:
             cells = [td.get_text(strip=True) for td in tr.find_all("td")]
@@ -209,7 +224,8 @@ class ScreenerClient:
                 continue
             row = {}
             for i, h in enumerate(headers):
-                if i < len(cells):
+                if i < len(cells) and (keep is None or i in keep):
                     row[h] = cells[i]
-            data_rows.append(row)
+            if row:
+                data_rows.append(row)
         return data_rows
