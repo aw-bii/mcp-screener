@@ -2,24 +2,16 @@
 
 MCP server for [Screener.in](https://www.screener.in/) financial data — Indian stock market fundamentals, ratios, quarterly results, shareholding, and peer comparison.
 
-## One-Command Install
-
-### macOS/Linux
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/aw-bii/mcp-screener/main/install.sh | sh
-```
-
-### Windows (PowerShell)
-
-```powershell
-powershell -c "irm https://raw.githubusercontent.com/aw-bii/mcp-screener/main/install.ps1 | iex"
-```
-
-### Manual (any platform)
+## Install
 
 ```bash
 pip install git+https://github.com/aw-bii/mcp-screener.git
+```
+
+To update to the latest version:
+
+```bash
+pip install --force-reinstall git+https://github.com/aw-bii/mcp-screener.git
 ```
 
 ## Configuration
